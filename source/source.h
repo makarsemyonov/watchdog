@@ -13,6 +13,15 @@
 #include <pthread.h>
 
 static int exitFlag = 1;
+static int allcounter = 0;
+static int ipv4_counter = 0;
+static int ipv6_counter = 0;
+static int all_bytes = 0;
+static int ipv4_bytes = 0;
+static int ipv6_bytes = 0;
+
+static pthread_mutex_t mutex;
+static int flag = 1;
 
 void* commandThread(void* arg);
 void printDevices();
