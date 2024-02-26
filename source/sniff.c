@@ -16,7 +16,14 @@ void printDevices() {
   printf("Available interfaces:\n\n");
   for (pcap_if_t *d = alldevs; d != NULL; d = d->next) {
     if (d->flags & PCAP_IF_UP && d->flags & PCAP_IF_RUNNING) {
-      printf("[-] %s\n", d->name);
+      printf("[*] %s\n", d->name);
+      struct pcap_addr *a;
+      for (a = d->addresses; a != NULL; a = a->next) {
+          if (a->addr->sa_family == AF_INET) {
+              printf("    IP Address: %s\n", inet_ntoa(((struct sockaddr_in *)a->addr)->sin_addr));
+              printf("    Subnet Mask: %s\n", inet_ntoa(((struct sockaddr_in *)a->netmask)->sin_addr));
+          }
+      }
     }
   }
   pcap_freealldevs(alldevs);
@@ -45,17 +52,13 @@ void handlePacket(const char *packet, struct pcap_pkthdr header, FILE *file) {
       packetCounters[2]++;
       packetCounters[6]++;
     }
-    else {
-      proto = "-";
-      packetCounters[6]++;
-    }
     ip_header = (struct ip *)(packet + sizeof(struct ether_header));
     char src_ip[INET_ADDRSTRLEN];
     char dst_ip[INET_ADDRSTRLEN];
     strcpy(src_ip, inet_ntoa(ip_header->ip_src));
     strcpy(dst_ip, inet_ntoa(ip_header->ip_dst));
-    fprintf(file, "[IPv4][%s] Source IP: %s, Destination IP: %s, %d bytes\n", proto,
-            src_ip, dst_ip, header.len);
+    fprintf(file, "[IPv4][%s][%d] Source IP: %s, Destination IP: %s\n", proto,
+            header.len, src_ip, dst_ip);
     byteCounters[0] += header.len;
     byteCounters[2] += header.len;
   } else if (ntohs(eth_header->ether_type) == ETHERTYPE_IPV6) {
@@ -78,14 +81,10 @@ void handlePacket(const char *packet, struct pcap_pkthdr header, FILE *file) {
       packetCounters[5]++;
       packetCounters[6]++;
     }
-    else {
-      proto = "-";
-
-    }
     inet_ntop(AF_INET6, &(ip6_header->ip6_src), src_ip, INET6_ADDRSTRLEN);
     inet_ntop(AF_INET6, &(ip6_header->ip6_dst), dst_ip, INET6_ADDRSTRLEN);
-    fprintf(file, "[IPv6][%s] Source IP: %s, Destination IP: %s, %d bytes\n", proto,
-            src_ip, dst_ip, header.len);
+    fprintf(file, "[IPv6][%s][%d] Source IP: %s, Destination IP: %s\n", proto, header.len,
+            src_ip, dst_ip);
     byteCounters[1] += header.len;
     byteCounters[2] += header.len;
   }
@@ -129,41 +128,42 @@ void sniff(const char *dev) {
 void *commandThread(void *arg) {
   char command[100];
   while (1) {
+    printf("-> ");
     fgets(command, sizeof(command), stdin);
-    if (strcmp(command, "/stop\n") == 0) {
+    if (strcmp(command, "stop\n") == 0) {
       printf("Stopping the process...\n");
       exitFlag = 0;
       break;
     }
     else if (strcmp(command, "/help\n") == 0) {
-      printf("/help - show help\n"
-             "/stop - stop the process\n"
-             "/pause - pause the process\n"
-             "/resume - resume the process\n"
-             "/stats - show current statistics\n");
+      printf("help - show help\n"
+             "stop - stop the process\n"
+             "pause - pause the process\n"
+             "resume - resume the process\n"
+             "stats - show current statistics\n");
     }
-    else if (strcmp(command, "/pause\n") == 0) {
+    else if (strcmp(command, "pause\n") == 0) {
       pthread_mutex_lock(&mutex);
       flag = 0;
       pthread_mutex_unlock(&mutex);
       printf("Sniffing paused...\n");
     }
-    else if (strcmp(command, "/resume\n") == 0) {
+    else if (strcmp(command, "resume\n") == 0) {
       pthread_mutex_lock(&mutex);
       flag = 1;
       pthread_mutex_unlock(&mutex);
       printf("Sniffing resumed\n");
     }
-    else if (strcmp(command, "/stats\n") == 0) {
+    else if (strcmp(command, "stats\n") == 0) {
       printf("This session statistics\n"
-             "If you need all sniff statistics, use \"/parse\" beyond active session\n"
+             "If you need all sniff statistics, use \"--parse/-f\" flag beyond active session\n"
              "      |\ttcp\t|\tudp\t|\ticmp\t|\tbytes\n"
              "--------------------------------------------------------------------\n"
              "IPv4  |\t%d\t|\t%d\t|\t%d\t|\t%d\t\n"
              "IPv6  |\t%d\t|\t%d\t|\t%d\t|\t%d\t\n"
-             "ARP  |\t\t%d\t\t|\t\t%d\t\n"
+             "ARP   |\t\t\t%d\t\t\t|\t%d\n\n"
              "--------------------------------------------------------------------\n"
-             "All   |\t\t%d\t\t|\t\t%d\t\n", packetCounters[0], packetCounters[1],
+             "All   |\t\t\t%d\t\t\t|\t%d\n\n", packetCounters[0], packetCounters[1],
              packetCounters[2], byteCounters[0], packetCounters[3], packetCounters[4],
              packetCounters[5], byteCounters[1], packetCounters[7], byteCounters[3], packetCounters[6], byteCounters[2]);
     }
